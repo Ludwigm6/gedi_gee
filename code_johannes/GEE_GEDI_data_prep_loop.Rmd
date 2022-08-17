@@ -1,0 +1,246 @@
+---
+Title: "Query and Export GEDI L2A&B vector data from GEE"
+author: "Johannes Heisig"
+---
+
+## Procedure
+
+GEDI vector data in GEE is currently stored in orbit files (granules). Each file has its unique GEE asset ID. Because GEDI observations are dense and has many attributes one quickly reaches memory limits. The idea of this procedure is to establish several filters, reducers, joins, and clean-up functions which can then be applied to each individual granule.
+
+## Setup
+
+```{r}
+library(rgee)
+# ee_Initialize('johannes.heisig@gmail.com', drive=T)
+ee_Initialize('pyropinus@gmail.com', drive=T)
+# rgee::ee_install_set_pyenv("/home/jheisig/.local/share/r-miniconda/envs/r-reticulate/bin/python3.6", "rgee")
+```
+
+```{r}
+#library(reticulate)
+library(dplyr)
+library(sf)
+setwd("~/PhD_home/data/GEDI/clip_ger/GEDI_vs_LiDAR_test/gedi_2ab_gee")
+source("rgee_helpers.R")
+```
+
+## Region of interest
+
+```{r}
+th = ee$FeatureCollection('users/jo_home/NRW-TH-BB_shape')
+Map$centerObject(th, zoom = 7)
+Map$addLayer(th)
+```
+
+## Find GEDI granules
+
+```{r}
+bbox <- '5.8,50.2,14.8,53.5'
+
+gr2A <- gedi_finder('GEDI02_A.002', bbox) |> unlist() |> basename() 
+gr2B <- gedi_finder('GEDI02_B.002', bbox) |> unlist() |> basename() 
+
+gr2A = tibble(L2A = gr2A) |> mutate(id = substr(L2A,10, 39))
+gr2B = tibble(L2B = gr2B) |> mutate(id = substr(L2B,10, 39))
+
+granules = inner_join(gr2A, gr2B, by = "id")
+```
+
+## Filter Dates from Granule Name
+
+Keep observations from
+
+-   summer months
+-   night time
+
+```{r}
+granules = granules |> 
+  mutate(date = getDateTime(L2A),
+         year = lubridate::year(date),
+         month = lubridate::month(date),
+         hour = lubridate::hour(date),
+         date = lubridate::as_date(date),
+         assetPathL2A = sub('.h5', '', paste0('LARSE/GEDI/GEDI02_A_002/',L2A)),
+         assetPathL2B = sub('.h5', '', paste0('LARSE/GEDI/GEDI02_B_002/',L2B))) |> 
+  select(-c(1,3)) |> 
+  filter(between(month, 5,10), !between(hour, 6, 23)) |> 
+  glimpse()
+```
+
+## Filter by Location, Beam, Quality, Height
+
+Keep Level 2A observations...
+
+-   from power beams
+-   with good quality
+-   where rh98 is between 2 and 60 meters (excluding non-forest or outliers)
+-   where sensitivity is high
+
+... and Level 2B observations...
+
+-   from power beams
+-   with good quality
+-   with ground cover larger 20%
+-   where sensitivity is high
+
+```{r}
+gedi2AFilter = function(g){
+  gr = ee$FeatureCollection(g)$
+    filterBounds(th$geometry())$
+    filter(ee$Filter$inList('beam',list(5,6,8,11)))$
+    filter(ee$Filter$eq('quality_flag', 1))$
+    filter(ee$Filter$eq('degrade_flag', 0))$
+    filter(ee$Filter$gt('rh98', 2))$
+    filter(ee$Filter$lt('rh98', 60))$
+    filter(ee$Filter$gt('sensitivity', 0.96)) # even higher?? 0.98
+  # add exact datetime via granule id (YYYYDDDHHMMSS)
+  return(gr)
+}
+
+gedi2BFilter = function(g){
+  g = ee$FeatureCollection(g)$
+    filterBounds(th$geometry())$
+    filter(ee$Filter$inList('beam',list(5,6,8,11)))$
+    filter(ee$Filter$eq('l2b_quality_flag', 1))$
+    filter(ee$Filter$eq('degrade_flag', 0))$
+    filter(ee$Filter$gt('cover', 0.2))$
+    filter(ee$Filter$gt('sensitivity', 0.96))  # even higher?? 0.98
+  return(g)
+}
+```
+
+## Apply Forest Mask
+
+-   use 'Forest'-class from ESA WorldCover at 10m resolution
+-   apply 5-pixel inward buffer to exclude forest edges and related uncertainties
+
+```{r}
+th = ee$FeatureCollection('users/jo_home/boundary_NRW-TH-SN-BB')
+th$geometry()$bounds()$getInfo() |> unlist() |> unique()
+
+lc = ee$Image('ESA/WorldCover/v100/2020')$eq(10)$clip(th)$selfMask()
+lcInverse = lc$unmask(2)$gt(1)$selfMask()
+lcFocal = lcInverse$focalMode(50, 'square', 'meters')
+lcReduced = lcFocal$unmask(3)$gt(2)$selfMask()$rename("ForestMask")
+
+redsum = ee$Reducer$sum()
+fil = ee$Filter$gt("sum", 0)
+```
+
+## Get Hansen GFC tree loss year
+
+```{r}
+gfl = ee$Image('UMD/hansen/global_forest_change_2021_v1_9')$select("lossyear")$clip(th)
+```
+
+## Join Level 2A and B
+
+-   create distance filter with 10m radius
+-   join both levels by location
+-   copy rh metrics from joined sub-feature to parent feature to reduce dimensions
+
+```{r}
+distFilter = ee$Filter$withinDistance(distance=10, leftField='.geo', rightField='.geo', maxError=5)
+distSaveAll = ee$Join$saveAll(matchesKey = "m", measureKey ='distance')
+
+rhs = ee$List(as.list(paste0("rh",1:99)))
+copyRHs = function(f){
+  m = ee$Feature(ee$List(f$get("m"))$get(0))
+  f = f$copyProperties(m, properties = rhs)
+  return(f$set("m", NULL))
+}
+```
+
+## Clean up data
+
+-   exclude irrelevant variables
+-   scale floats to integers to save memory (\*1000)
+
+```{r}
+n = readRDS("column_names_joined_GEDI2AB.rds")
+n_exclude = c("delta_time", "l2b_quality_flag", "selected_l2a_algorithm", 
+              "selected_rg_algorithm", "degrade_flag", "algorithmrun_flag")  #, "sum"
+n_keep = setdiff(n, n_exclude)
+n_no_round = c("beam","local_beam_elevation", "local_beam_azimuth", "shot_number", "sensitivity", 
+               "solar_azimuth", "solar_elevation", "system:index" , "sum")
+
+n_round =  ee$List(as.list(setdiff(n_keep, n_no_round)))
+n_no_round =  ee$List(as.list(n_no_round))
+
+scale1000 = ee_utils_pyfunc(function(key, val) return(ee$Number(val)$multiply(1000)$toInt()))
+
+applySelected = function(f) {
+  d1 = f$toDictionary(n_no_round)$rename(list("sum"),list("GFC_lossyear"), TRUE)
+  d2 = f$toDictionary(n_round)$map(scale1000)
+  dd = d1$combine(d2)
+  return(ee$Feature(f$geometry(), dd))
+}
+```
+
+## Process and Export
+
+-   apply previously defined filters and functions
+-   export every single file as geopackage using `ee_as_sf()`
+
+```{r}
+options(timeout = 3000)
+getGEDI = function(a, b, d, ...){
+  n = basename(a)
+  o = paste0(getwd(),"/gpkg/",n,".gpkg")
+  if (! file.exists(o)){
+    a = gedi2AFilter(a)
+    b = gedi2BFilter(b)
+    a = lcReduced$reduceRegions(a, scale=10, reducer = redsum)$filter(fil)
+    b = lcReduced$reduceRegions(b, scale=10, reducer = redsum)$filter(fil)
+    
+    a = gfl$reduceRegions(a, scale=10, reducer = redsum)
+    b = gfl$reduceRegions(b, scale=10, reducer = redsum)
+    
+    ab = distSaveAll$apply(b, a, distFilter)
+    ab = ab$map(copyRHs)
+    ab = ab$map(applySelected)
+    
+    addDate = function(f) {return(f$set('date', rdate_to_eedate(d)))}
+    ab = ab$map(addDate)
+    
+    beepr::beep_on_error({
+      ti = system.time({
+      jj = data.frame(nix = "los")
+      jj = ee_as_sf(ab, maxFeatures = 20000, quiet = T, ...)
+      })
+      if (nrow(jj) > 1){
+        sf::st_write(jj, o, quiet=T)
+        message(crayon::green(paste(nrow(jj), "features completed in:",
+                                    round(ti[3]),"s")))
+      }
+    })
+  }
+}
+
+# User memory limit exceeded: 29, 202
+
+for(i in 86:nrow(granules)){
+  message(i)
+  getGEDI(granules$assetPathL2A[i], granules$assetPathL2B[i], granules$date[i])
+}
+```
+
+## Import and Select
+
+-   bind singles file together
+-   create 1km grid and reduce to 1/9 of cells (CV blocks)
+-   extract cell ids for spatially stratified sample
+
+```{r}
+read_and_label = function(x, ...){
+  s = st_read(x, ...)
+  if (ncol(s) > 203) s = s[,-1]
+  return(cbind(file = basename(x), s))
+}
+gedi = purrr::map(list.files("gpkg", full.names = T), read_and_label, quiet=T)
+
+purrr::map(gedi, ncol) |> unlist() |> table()
+gedi = do.call(rbind, gedi)
+
+saveRDS(gedi, "01_gedi_2ab_filtered.rds")
+```
