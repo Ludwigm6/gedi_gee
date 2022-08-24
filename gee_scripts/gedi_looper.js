@@ -68,7 +68,8 @@ var results = granules.map(function(g){
   // Filter a small amount of points in the orbit
   gedi = gedi.filterBounds(hessen).randomColumn();
   var gedi_sample = gedi.filter(ee.Filter.lt("random", 0.03));
-  
+  // Buffer the points
+  gedi_sample = gedi_sample.map(function(f){return f.buffer(15)})
   // Load Sentinel 2 Surface Reflectance and apply the filtering
   // Uses start and end date specified in the granule list
   var sen2 = ee.ImageCollection('COPERNICUS/S2_SR')
@@ -89,7 +90,7 @@ var results = granules.map(function(g){
   var sampledPoints = sen2.sampleRegions({
   collection: gedi_sample,
   scale: 10,
-  properties: ['B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'B8', 'NDVI','EVI','IRECI','SCL','pai'],
+  properties: ['pai'],
   geometries: true
 })
 
