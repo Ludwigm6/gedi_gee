@@ -12,30 +12,28 @@ var granules = [
                ]
 
 
-
-
 // define function for indices
 var S2_SR_indices = function(img){
-  
+
   var ndvi = img.expression('(NIR-RED)/(NIR+RED)', {
               'NIR': img.select('B8'),
               'RED': img.select('B4')
               }).multiply(10000).toInt16().rename('NDVI');
-              
+
   var evi = img.expression(
       '2.5 * ((NIR - RED) / (NIR + 6 * RED - 7.5 * BLUE + 1))', {
       'NIR': img.select('B8'),
       'RED': img.select('B4'),
       'BLUE': img.select('B2')}).multiply(10000).toInt16().rename('EVI');
-      
+
   var ireci = img.expression(
       '(NIR - RED)/(RE1/RE2)',{
         'NIR': img.select('B7'),
         'RED': img.select('B4'),
         'RE1': img.select('B5'),
         'RE2': img.select('B6')}).multiply(10000).toInt16().rename('IRECI');
-        
-        
+
+
     return img.addBands(ndvi).addBands(evi).addBands(ireci);
 }
 
@@ -51,25 +49,41 @@ var S2_SR_cloudmask = function (image) {
 
 
 // load hessen vector
-var hessen = ee.FeatureCollection("projects/ee-ludwigm6/assets/gedi_hessen/hessen");
+var hessen = ee.FeatureCollection("users/alicezglr/hessen");
+//var hessen = ee.FeatureCollection("projects/ee-ludwigm6/assets/gedi_hessen/hessen");
 var AOI = hessen.geometry().bounds();
-
 
 
 
 // map over granule list
 var results = granules.map(function(g){
-  
+
   // Load one GEDI orbit
   var gedi = ee.FeatureCollection(g[0]);
-  
-  
-  
+
+
+
+  /*
   // Filter a small amount of points in the orbit
   gedi = gedi.filterBounds(hessen).randomColumn();
   var gedi_sample = gedi.filter(ee.Filter.lt("random", 0.03));
-  // Buffer the points
-  gedi_sample = gedi_sample.map(function(f){return f.buffer(15)})
+    // Buffer the points
+  gedi_sample = gedi_sample.map(function(f){return f.buffer(15)});
+  */
+
+  // Filter gedi points
+  var gedi_filt = gedi
+  .filter(ee.Filter.eq("l2b_quality_flag", 1)) // decide on values
+  .filter(ee.Filter.gt("sensitivity", 0.96)) // decide on values
+  .filter(ee.Filter.inList("beam", ee.List([5,6,8,11]))) // decide
+  .filter(ee.Filter.neq("pai", null)); //not sure if not working or no null values
+// print("gedi_filt: ", gedi_filt);
+// print("Number of shots after filtering: ", gedi_filt.size());
+
+  //while testing:
+  var gedi_sample = gedi_filt;
+
+
   // Load Sentinel 2 Surface Reflectance and apply the filtering
   // Uses start and end date specified in the granule list
   var sen2 = ee.ImageCollection('COPERNICUS/S2_SR')
@@ -77,16 +91,16 @@ var results = granules.map(function(g){
     .filterDate(g[1], g[2])
     .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 80)) // less than 80% cloud cover
     .select('B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'B8', 'SCL')
-    // .map(S2_SR_cloudmask) 
+    // .map(S2_SR_cloudmask)
     .map(S2_SR_indices) // apply the index calculation function to each image in the ImageCollection
     .toBands() // Turn the collection into one multi-band image
-    
-    
-    
-    
-    
-    
-    
+
+
+
+
+
+
+
   var sampledPoints = sen2.sampleRegions({
   collection: gedi_sample,
   scale: 10,
@@ -99,7 +113,7 @@ var results = granules.map(function(g){
 return(sampledPoints)
 
 
-  
+
 })
 
 
@@ -120,4 +134,3 @@ for(var j in [0,1,2,3,4]){
 
 
 // Hint: I left out the cloud mask for this test since the chosen date is very cloudy and no points are left
-
