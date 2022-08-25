@@ -1,8 +1,7 @@
-
-
 // input granules // client side list
 // granule format: ["Name", "StartDate", "EndDate"]
 
+print("start: ", new Date())
 var granules = [
 ['LARSE/GEDI/GEDI02_B_002/GEDI02_B_2020330171806_O11074_02_T08735_02_003_01_V002' , '2020-11-20' , '2020-11-30'],
 ['LARSE/GEDI/GEDI02_B_002/GEDI02_B_2020230081607_O09518_02_T01237_02_003_01_V002' , '2020-08-12' , '2020-08-22'],
@@ -63,62 +62,56 @@ var results = granules.map(function(g){
 
 
 
-  /*
+
   // Filter a small amount of points in the orbit
   gedi = gedi.filterBounds(hessen).randomColumn();
   var gedi_sample = gedi.filter(ee.Filter.lt("random", 0.03));
     // Buffer the points
   gedi_sample = gedi_sample.map(function(f){return f.buffer(15)});
-  */
+
+    //while testing:
+  //var  gedi_filt = gedi_sample
+
 
   // Filter gedi points
   var gedi_filt = gedi
-  .filter(ee.Filter.eq("l2b_quality_flag", 1)) // decide on values
-  .filter(ee.Filter.gt("sensitivity", 0.96)) // decide on values
-  .filter(ee.Filter.inList("beam", ee.List([5,6,8,11]))) // decide
-  .filter(ee.Filter.neq("pai", null)); //not sure if not working or no null values
-// print("gedi_filt: ", gedi_filt);
-// print("Number of shots after filtering: ", gedi_filt.size());
-
-  //while testing:
-  var gedi_sample = gedi_filt;
+  .filter(ee.Filter.eq("l2b_quality_flag", 1))
+  .filter(ee.Filter.gt("sensitivity", 0.9))
+  .filter(ee.Filter.neq("pai", null));
+  print("gedi_filt: ", gedi_filt);
+print("Number of shots after filtering: ", gedi_filt.size());
+ // Buffer the points
+  gedi_filt = gedi_filt.map(function(f){return f.buffer(12.5)});
+//if number of shots <= 200: ommit! perhaps rather filter in R afterwards: how to do it vs. computation time...
 
 
   // Load Sentinel 2 Surface Reflectance and apply the filtering
   // Uses start and end date specified in the granule list
   var sen2 = ee.ImageCollection('COPERNICUS/S2_SR')
-    .filterBounds(gedi_sample)
+    .filterBounds(gedi_filt)
     .filterDate(g[1], g[2])
     .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 80)) // less than 80% cloud cover
     .select('B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'B8', 'SCL')
-    // .map(S2_SR_cloudmask)
+    .map(S2_SR_cloudmask)
     .map(S2_SR_indices) // apply the index calculation function to each image in the ImageCollection
-    .toBands() // Turn the collection into one multi-band image
-
-
-
-
-
+    .toBands(); // Turn the collection into one multi-band image
 
 
   var sampledPoints = sen2.sampleRegions({
-  collection: gedi_sample,
+  collection: gedi_filt,
   scale: 10,
-  properties: ['pai'],
+  properties: ['pai', "beam", "degrade_flag", "l2b_quality_flag",
+  "orbit_number", "sensitivity", "shot_number", "shot_number_within_beam",
+  "solar_azimuth", "solar_elevation"],
   geometries: true
-})
+});
 
-
-
-return(sampledPoints)
-
-
-
-})
+return(sampledPoints);
+});
 
 
 // look at output
-print(results)
+print("results: ", results);
 
 
 
@@ -129,8 +122,9 @@ for(var j in [0,1,2,3,4]){
     description: j,
     fileNamePrefix: "gedi_"+j,
     folder: "gedi"
-  })
+  });
 }
 
 
 // Hint: I left out the cloud mask for this test since the chosen date is very cloudy and no points are left
+print("end: ", new Date());
