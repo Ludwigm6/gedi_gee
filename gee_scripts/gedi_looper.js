@@ -96,6 +96,7 @@ print("Number of shots after filtering: ", gedi_filt.size());
     .map(S2_SR_indices) // apply the index calculation function to each image in the ImageCollection
     .toBands(); // Turn the collection into one multi-band image
 
+print("sen2: ", sen2)
 
   var sampledPoints = sen2.sampleRegions({
   collection: gedi_filt,
@@ -105,13 +106,45 @@ print("Number of shots after filtering: ", gedi_filt.size());
   "solar_azimuth", "solar_elevation"],
   geometries: true
 });
+print("sampoi: ", sampledPoints)
+print("size: ", sampledPoints.size());
 
 return(sampledPoints);
 });
 
-
 // look at output
 print("results: ", results);
+
+/////////////////////////////////
+//remove empty elements form "results"
+/////////////////////////////////
+//function to cast empty entries to 0 and non-empty to 1
+var boolify = function(f){ //input = feature collection
+  var size0 = f.size();
+  //print("size0: ", size0)
+  var booly = ee.Algorithms.If(size0, 1, 0); //an if-statement that should be avoided
+  return(ee.Number(booly));
+};
+
+//function to add new property (boolean if size !=0) to feature Collection
+var set_bool = function(fc){
+  var booly = boolify(fc);
+  print("fc before: ", fc);
+  fc = fc.set('size0', booly);
+  print("fc after: ", fc);
+  return(fc);
+};
+
+var prop_lst = results.map(set_bool); //filtering not possible with this object
+print("prop_lst: ", prop_lst);
+var prop_ee_lst = ee.List(prop_lst); //cast to ee.List deletes all features in fc but filtering would be possible
+print("prop ee_lst: ", prop_ee_lst);
+
+var prop_ee_filt = prop_ee_lst.filter(ee.Filter.eq("size0", 1));
+print("prop_ee_filt: ", prop_ee_filt);
+var prop_filt = prop_lst.filter(ee.Filter.eq("size0", 1));
+//var prop_filt = prop_lst.filter(ee.Filter.notNull(['item']));
+print("prop_filt: ", prop_filt);
 
 
 
