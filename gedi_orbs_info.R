@@ -32,7 +32,7 @@ orbs <- gedifinder(product="GEDI02_B", ymax, xmin, ymin, xmax, version, daterang
 
 asset_info_lst <- lapply(orbs, function(o){
   asset <- substr(o, 70, nchar(orbs)-3)
-  full_dt <- strsplit(as.character(assets), "_")[[1]][3]
+  full_dt <- strsplit(as.character(asset), "_")[[1]][3]
   yr <- substr(full_dt, 1, 4)
   dy <- substr(full_dt, 5, 7)
   dt <- as.Date(as.integer(dy)-1, origin = paste0(yr, "-01-01"))
@@ -45,6 +45,9 @@ asset_info_lst <- lapply(orbs, function(o){
 })
 asset_info <- do.call(rbind, asset_info_lst)
 
+# to avoid appending to an existing file
+if (file.exists("data/granule_list.txt")) {
+    file.remove("data/granule_list.txt")}
 
 for(i in 1:nrow(asset_info)){
   res_string = paste0("['LARSE/GEDI/GEDI02_B_002/",

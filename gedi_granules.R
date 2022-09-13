@@ -1,61 +1,90 @@
-source("code_johannes/rgee_helpers.R")
+# Description: Find GEdi Data for area and time range and write into file taht is readable form GEE
+# Author: Alice Ziegler
+# Date:
+# 2022-09-08 15:54:02
+# to do:
 
+rm(list=ls())
 
-library(sf)
+########################################################################################
+### Presettings
+########################################################################################
+
+#####
+### load packages
+#####
+library(rGEDI)
+library(readr)
 library(rnaturalearth)
 library(dplyr)
 
-# get hessen
-hessen = rnaturalearth::ne_states(country = "Germany", returnclass = "sf") %>% filter(name == "Hessen") %>% select(name)
+source("scripts/000_presettings.R") #as part of preprocessing script to adapt paths
+#####
+### load general settings
+#####
+# to avoid appending to an existing file
+if (file.exists(paste0(gee_path, "granule_list_comma.txt"))) {
+    file.remove(paste0(gee_path, "granule_list_comma.txt"))}
+
+#####
+### read data
+#####
+
+# for testing
+# xmax <- 8.6
+# xmin <- 8.460928
+# ymax <- 50.85
+# ymin <- 50.77558
+
+# hessen:
+hessen = rnaturalearth::ne_states(country = "Germany", returnclass = c("sf")) %>% dplyr::filter(name == "Hessen") %>% select(name)
 hessen = st_cast(hessen, "POLYGON")
-hessen
-st_write(hessen, "data/hessen.shp")
+bbox <- st_bbox(hessen)
 
+xmin <- bbox$xmin
+xmax <- bbox$xmax
+ymin <- bbox$ymin
+ymax <- bbox$ymax
 
-bbox <- '7.7,49.3,10.23,51.6'
+version <- "002"
+daterange <- c("2019-03-01","2019-10-01")
 
-gr2A <- gedi_finder('GEDI02_A.002', bbox) |> unlist() |> basename() 
-gr2B <- gedi_finder('GEDI02_B.002', bbox) |> unlist() |> basename()
+orbs <- gedifinder(product="GEDI02_B", ymax, xmin, ymin, xmax, version, daterange)
 
-gr2A = tibble(L2A = gr2A) |> mutate(id = substr(L2A,10, 39))
-gr2B = tibble(L2B = gr2B) |> mutate(id = substr(L2B,10, 39))
+asset_info_lst <- lapply(orbs, function(o){
+  asset <- substr(o, 70, nchar(orbs)-3)
+  # full_dt <- strsplit(as.character(asset), "_")[[1]][3]
+  # yr <- substr(full_dt, 1, 4)
+  # dy <- substr(full_dt, 5, 7)
+  # dt <- as.Date(as.integer(dy)-1, origin = paste0(yr, "-01-01"))
+  # sen1_strt <- dt-2
+  # sen1_end <- dt+2
+  # sen2_strt <- dt-5
+  # sen2_end <- dt+5
+  # df <- data.frame(asset = asset, sen1_strt = sen1_strt, sen1_end = sen1_end, sen2_strt = sen2_strt, sen2_end = sen2_end)
+  # return(df)
+})
+asset_info <- do.call(rbind, asset_info_lst)
 
-granules = inner_join(gr2A, gr2B, by = "id")
+for(i in 1:nrow(asset_info)){
+  res_string = paste0("['LARSE/GEDI/GEDI02_B_002/",
+                      asset_info[i],
+                      # asset_info[i,"sen1_strt"], "' , '",
+                      # asset_info[i,"sen1_end"], "' , '",
+                      # asset_info[i,"sen2_strt"], "' , '",
+                      # asset_info[i,"sen2_end"],
+                      "']")
 
-
-# filter dates
-
-granules = granules |> 
-    mutate(date = getDateTime(L2A),
-           year = lubridate::year(date),
-           month = lubridate::month(date),
-           hour = lubridate::hour(date),
-           date = lubridate::as_date(date),
-           assetPathL2A = sub('.h5', '', paste0('LARSE/GEDI/GEDI02_A_002/',L2A)),
-           assetPathL2B = sub('.h5', '', paste0('LARSE/GEDI/GEDI02_B_002/',L2B))) |> 
-    select(-c(1,3)) |> 
-    mutate(startDate = date - 5,
-           endDate = date + 5)
-
-
-set.seed(5)
-granule_sample = granules[sample(1500,5),]
-
-
-for(i in 1:nrow(granule_sample)){
-    
-    
-    res_string = paste0("['",
-                        granule_sample$assetPathL2B[i], "' , '",
-                        granule_sample$startDate[i], "' , '",
-                        granule_sample$endDate[i],
-                        "']")
-
-    cat(res_string, file = "granule_list.txt", append = TRUE)
-    cat(",\n", file = "granule_list.txt", append = TRUE)
+  cat(paste0(res_string, ","), file = paste0(gee_path, "granule_list_comma.txt"), sep = "\n", append = TRUE)
 }
 
+###read delete last comma and write
+##following runs, but adds one additional newline!! WHY??
 
+read <- read_file(paste0(gee_path, "granule_list_comma.txt"))
+no_comma <- substring(read,1, nchar(read)-3)
+no_comma <- gsub("\r", "", no_comma)
+cat(no_comma, file = paste0(gee_path, "granule_list.txt"), sep = "")
+file.remove(paste0(gee_path, "granule_list_comma.txt"))
 
-
-
+###next: manually import table into gee
