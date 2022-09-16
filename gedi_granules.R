@@ -16,6 +16,7 @@ rm(list=ls())
 library(rGEDI)
 library(readr)
 library(rnaturalearth)
+library(sf)
 library(dplyr)
 
 source("scripts/000_presettings.R") #as part of preprocessing script to adapt paths
