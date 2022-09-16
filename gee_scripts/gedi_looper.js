@@ -95,8 +95,6 @@ var results = granules.map(function(g){
   // Buffer the points and add time as property
 <<<<<<< HEAD
   gedi_sample = gedi_sample.map(function(f){return f.buffer(12.5).set({time: gedi_date})})
-=======
-  gedi_sample = gedi_sample.map(function(f){return f.buffer(12.5).set({time: g[1]})})
   //print(gedi_sample)
 >>>>>>> 2ef733a (minor changes for export into the R workflow)
 
