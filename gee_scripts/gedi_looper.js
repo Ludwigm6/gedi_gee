@@ -95,7 +95,7 @@ var results = granules.map(function(g){
   //while testing:
   var gedi_sample = gedi
   // Buffer the points and add time as property
-  gedi_sample = gedi_sample.map(function(f){return f.buffer(12.5).set({time: g[1]})})
+  gedi_sample = gedi_sample.map(function(f){return f.buffer(12.5).set({time: gedi_date})})
   //print(gedi_sample)
 
 
