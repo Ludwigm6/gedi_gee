@@ -1,12 +1,10 @@
-
-
 // INPUT -------------------------------
 
 
 // input granules
 // granule format: ["Name", "Date"]
 
-var granules = [
+var granule_list = [
 ['LARSE/GEDI/GEDI02_B_002/GEDI02_B_2020330171806_O11074_02_T08735_02_003_01_V002'],
 ['LARSE/GEDI/GEDI02_B_002/GEDI02_B_2020230081607_O09518_02_T01237_02_003_01_V002'],
 ['LARSE/GEDI/GEDI02_B_002/GEDI02_B_2019248025112_O04134_02_T00641_02_003_01_V002'],
@@ -16,9 +14,9 @@ var granules = [
 
 
 //var granule_list = require("users/alicezglr/default/granule_list.js");
-var granules = granule_list.granules
+var granules = granule_list
 // load hessen vector: AOI
-var hessen = ee.FeatureCollection("users/alicezglr/hessen");
+var hessen = ee.FeatureCollection("projects/ee-ludwigm6/assets/gedi_hessen/hessen");
 
 // FUNCTIONS ---------------------------
 
@@ -96,7 +94,7 @@ var results = granules.map(function(g){
   //while testing:
   var gedi_sample = gedi
   // Buffer the points and add time as property
-  gedi_sample = gedi_sample.map(function(f){return f.buffer(12.5).set({time: g[1]})})
+  gedi_sample = gedi_sample.map(function(f){return f.buffer(12.5).set({time: gedi_date})})
 
   print(gedi_sample, "W Time")
   print("gedi_sample size: ", gedi_sample.size())
@@ -116,8 +114,8 @@ var results = granules.map(function(g){
     .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 80)) // less than 80% cloud cover
     .select('B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'B8', 'SCL')
     .map(function(image){
-      var idate = image.date().difference(gedi_date, "day");
-      var dateBand = ee.Image.constant(idate).uint16().rename('S2time')
+      var idate = ee.Number.parse(image.date().format("YYYYDDD"))
+      var dateBand = ee.Image.constant(idate).uint32().rename('S2time')
       return(image.addBands(dateBand))
     })
     .map(S2_SR_indices)
@@ -137,12 +135,13 @@ var results = granules.map(function(g){
   .filter(ee.Filter.eq('instrumentMode', 'IW'))
   .select("VV", "VH")
   .map(function(image){
-      var idate = image.date().difference(gedi_date, "day");
-      var dateBand = ee.Image.constant(idate).uint16().rename('S1time')
+      var idate = ee.Number.parse(image.date().format("YYYYDDD"));
+      var dateBand = ee.Image.constant(idate).uint32().rename('S1time')
       return(image.addBands(dateBand))
     })
   .map(sen1vvvh)
   .map(temporalMatch)
+  .sort("timediff")
   .mosaic();
 
 
