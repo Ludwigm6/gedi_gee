@@ -14,7 +14,7 @@ var granule_list = [
 
 
 //var granule_list = require("users/alicezglr/default/granule_list.js");
-var granules = granule_list
+//var granules = granule_list.granules
 // load hessen vector: AOI
 var hessen = ee.FeatureCollection("projects/ee-ludwigm6/assets/gedi_hessen/hessen");
 
@@ -66,8 +66,6 @@ function name2date(namestring){
 
 
 
-
-
 // COMPUTE --------------------------
 
 
@@ -90,15 +88,21 @@ var results = granules.map(function(g){
   gedi = gedi.filterBounds(hessen).randomColumn();
   var gedi_sample = gedi.filter(ee.Filter.lt("random", 0.03));
   */
-
+    print("gedi filter size: ", gedi.size())
+   // print(gedi)
   //while testing:
   var gedi_sample = gedi
   // Buffer the points and add time as property
+<<<<<<< HEAD
   gedi_sample = gedi_sample.map(function(f){return f.buffer(12.5).set({time: gedi_date})})
+=======
+  gedi_sample = gedi_sample.map(function(f){return f.buffer(12.5).set({time: g[1]})})
+  //print(gedi_sample)
+>>>>>>> 2ef733a (minor changes for export into the R workflow)
 
-  print(gedi_sample, "W Time")
-  print("gedi_sample size: ", gedi_sample.size())
 
+print("gedi buffer size: ", gedi_sample.size())
+print(gedi_sample, "W Time")
     // calc time difference to gedi date
   var temporalMatch = function(image){
       var timediff = gedi_date.difference(ee.Date(image.get("system:time_start")), "day").abs()
@@ -124,9 +128,6 @@ var results = granules.map(function(g){
     .mosaic()
 
 
-
-
-
   var sen1 = ee.ImageCollection("COPERNICUS/S1_GRD")
   .filterBounds(gedi_sample)
   .filterDate(gedi_date.advance(-3, "day"), gedi_date.advance(3, "day")) // +- 3 days of gedi orbit
@@ -144,28 +145,21 @@ var results = granules.map(function(g){
   .sort("timediff")
   .mosaic();
 
-
-
-
   var stack = sen2.addBands(sen1)
-
-
 
   var sampledPoints = stack.sampleRegions({
   collection: gedi_sample,
   scale: 10,
-  properties: ['time','pai'],
+  properties: ['time','pai', "beam", "degrade_flag", "l2b_quality_flag",
+  "orbit_number", "sensitivity", "shot_number", "shot_number_within_beam",
+  "solar_azimuth", "solar_elevation", "id"],
   geometries: true
 })
 
-
-
+  print("sampled_Poimts: ", sampledPoints.size())
   return sampledPoints
 
 })
-
-
-
 
 print(results, "Sampled Points")
 
@@ -176,7 +170,7 @@ var resultsCollection = ee.FeatureCollection(results).flatten()
 print(resultsCollection.first(), "RES")
 
 
-
+print("size result collection: ", resultsCollection.size())
 // save each GEDI orbit in a different file
 
 
