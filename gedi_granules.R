@@ -48,7 +48,7 @@ ymin <- bbox$ymin
 ymax <- bbox$ymax
 
 version <- "002"
-daterange <- c("2019-03-01","2019-10-01")
+daterange <- c("2019-03-01","2022-10-01")
 
 orbs <- gedifinder(product="GEDI02_B", ymax, xmin, ymin, xmax, version, daterange)
 

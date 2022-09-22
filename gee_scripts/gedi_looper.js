@@ -354,10 +354,11 @@ var results = granules.map(function(g){
   var gedi_sample = gedi
   // Buffer the points and add time as property
   gedi_sample = gedi_sample.map(function(f){return f.buffer(12.5).set({time: gedi_date})})
-  //print(gedi_sample)
 
-//print("gedi buffer size: ", gedi_sample.size())
-//print(gedi_sample, "W Time")
+  //print(gedi_sample)
+print("gedi buffer size: ", gedi_sample.size())
+print(gedi_sample, "W Time")
+
     // calc time difference to gedi date
   var temporalMatch = function(image){
       var timediff = gedi_date.difference(ee.Date(image.get("system:time_start")), "day").abs()
