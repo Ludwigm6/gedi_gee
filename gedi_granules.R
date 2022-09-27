@@ -21,11 +21,9 @@ library(dplyr)
 
 source("scripts/000_presettings.R") #as part of preprocessing script to adapt paths
 #####
-### load general settings
+### general settings
 #####
-# to avoid appending to an existing file
-if (file.exists(paste0(gee_path, "granule_list_comma.txt"))) {
-    file.remove(paste0(gee_path, "granule_list_comma.txt"))}
+
 
 #####
 ### read data
@@ -65,7 +63,15 @@ asset_info_lst <- lapply(orbs, function(o){
   # df <- data.frame(asset = asset, sen1_strt = sen1_strt, sen1_end = sen1_end, sen2_strt = sen2_strt, sen2_end = sen2_end)
   # return(df)
 })
-asset_info <- do.call(rbind, asset_info_lst)
+saveRDS(asset_info_lst, file = paste0(gee_path, "asset_list.rds"))
+asset_info <- do.call("rbind", asset_info_lst)
+
+
+# to avoid appending to an existing file
+if (file.exists(paste0(gee_path, "granule_list_comma.txt"))) {
+    file.remove(paste0(gee_path, "granule_list_comma.txt"))}
+if (file.exists(paste0(gee_path, "granule_list.txt"))) {
+    file.remove(paste0(gee_path, "granule_list.txt"))}
 
 for(i in 1:nrow(asset_info)){
   res_string = paste0("['LARSE/GEDI/GEDI02_B_002/",
