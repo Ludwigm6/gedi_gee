@@ -6,13 +6,14 @@
 
 
 //var gedi_granules = require("users/Ludwigm6/gedi:gedi_granules")
+
 /*
-var gedi_granules = require("users/alicezglr/default:granule_list")
-var granules = gedi_granules.granules
+var gedi_granules = require("users/alicezglr/default:granule_list_group")
+var group_granules = gedi_granules.granules
 */
 
-var granules = [
-  ['LARSE/GEDI/GEDI02_B_002/GEDI02_B_2019253002511_O04210_02_T00809_02_003_01_V002'],
+var group_granules = [
+[['LARSE/GEDI/GEDI02_B_002/GEDI02_B_2019253002511_O04210_02_T00809_02_003_01_V002'],
 ['LARSE/GEDI/GEDI02_B_002/GEDI02_B_2019282143448_O04669_03_T05171_02_003_01_V002'],
 ['LARSE/GEDI/GEDI02_B_002/GEDI02_B_2019302045500_O04973_02_T05384_02_003_01_V002'],
 ['LARSE/GEDI/GEDI02_B_002/GEDI02_B_2019212174240_O03585_03_T02952_02_003_01_V002'],
@@ -27,8 +28,8 @@ var granules = [
 ['LARSE/GEDI/GEDI02_B_002/GEDI02_B_2019287120954_O04745_03_T00917_02_003_01_V002'],
 ['LARSE/GEDI/GEDI02_B_002/GEDI02_B_2019223132943_O03753_03_T05186_02_003_01_V002'],
 ['LARSE/GEDI/GEDI02_B_002/GEDI02_B_2019275152858_O04561_02_T00656_02_003_01_V002'],
-['LARSE/GEDI/GEDI02_B_002/GEDI02_B_2019189034415_O03219_03_T03947_02_003_01_V002'],
-['LARSE/GEDI/GEDI02_B_002/GEDI02_B_2019321204934_O05278_02_T05139_02_003_01_V002'],
+['LARSE/GEDI/GEDI02_B_002/GEDI02_B_2019189034415_O03219_03_T03947_02_003_01_V002']],
+[['LARSE/GEDI/GEDI02_B_002/GEDI02_B_2019321204934_O05278_02_T05139_02_003_01_V002'],
 ['LARSE/GEDI/GEDI02_B_002/GEDI02_B_2019196225104_O03340_02_T04665_02_003_01_V002'],
 ['LARSE/GEDI/GEDI02_B_002/GEDI02_B_2019314000252_O05156_02_T01375_02_003_01_V002'],
 ['LARSE/GEDI/GEDI02_B_002/GEDI02_B_2019348115134_O05691_03_T03564_02_003_01_V002'],
@@ -161,7 +162,7 @@ var granules = [
 ['LARSE/GEDI/GEDI02_B_002/GEDI02_B_2021097131505_O13133_02_T10143_02_003_01_V002'],
 ['LARSE/GEDI/GEDI02_B_002/GEDI02_B_2021089162017_O13011_02_T07450_02_003_01_V002'],
 ['LARSE/GEDI/GEDI02_B_002/GEDI02_B_2021293073130_O16167_02_T05935_02_003_01_V002'],
-['LARSE/GEDI/GEDI02_B_002/GEDI02_B_2021222123738_O15070_03_T01529_02_003_01_V002']
+['LARSE/GEDI/GEDI02_B_002/GEDI02_B_2021222123738_O15070_03_T01529_02_003_01_V002']]
 ];
 
 //var granule_list = require("users/alicezglr/default/granule_list.js");
@@ -216,12 +217,19 @@ function name2date(namestring){
   return(ee.Date(date))
 }
 
+// define function for cloud mask (based on SCL band)
+var S2_SR_cloudmask = function (image) {
+  var scl = image.select('SCL');
+  var wantedPixels = scl.gt(3).and(scl.lt(7)).or(scl.eq(1)).or(scl.eq(2));
+  return image.updateMask(wantedPixels)
+}
 
 
 // COMPUTE --------------------------
 
 
 // map over granule list
+var results_group_granules = group_granules.map(function(granules){
 var results = granules.map(function(g){
 
 
@@ -262,6 +270,7 @@ var results = granules.map(function(g){
     .filterDate(gedi_date.advance(-5, "day"), gedi_date.advance(5, "day")) // +- 5 days of gedi orbit
     .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 50)) // less than 80% cloud cover
     .select('B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'B8', 'B8A', 'B9', 'B11', 'B12', 'SCL')
+    .map(S2_SR_cloudmask)
     .map(function(image){
       var idate = ee.Number.parse(image.date().format("YYYYDDD"))
       var dateBand = ee.Image.constant(idate).uint32().rename('S2time')
@@ -328,6 +337,8 @@ var resultsCollection = ee.FeatureCollection(results).flatten()
 Export.table.toDrive({
     collection: resultsCollection,
     description: "Res",
-    fileNamePrefix: "gedi_",
+    fileNamePrefix: "gedi_", //here I would like to give a different name in every iteration (e.g. gedi_1_ , gedi_2_, ...)
     folder: "gedi"
   })
+
+})
